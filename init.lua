@@ -110,7 +110,8 @@ do
   vim.o.number = true
   -- You can also add relative line numbers, to help with jumping.
   --  Experiment for yourself to see if you like it!
-  -- vim.o.relativenumber = true
+  vim.o.relativenumber = true
+  vim.o.history = 10000 -- remember more command history
 
   -- Enable mouse mode, can be useful for resizing splits for example!
   vim.o.mouse = 'a'
@@ -167,6 +168,30 @@ do
   -- Minimal number of screen lines to keep above and below the cursor.
   vim.o.scrolloff = 10
 
+  -- Tab and indentation settings
+  vim.o.tabstop = 4
+  vim.o.shiftwidth = 4
+  vim.o.expandtab = true
+  vim.o.softtabstop = 4
+
+  -- 2-space indentation for JS/TS/JSON files
+  vim.api.nvim_create_autocmd('FileType', {
+    pattern = { 'javascript', 'javascriptreact', 'typescript', 'typescriptreact', 'json', 'jsonc' },
+    callback = function()
+      vim.opt_local.tabstop = 2
+      vim.opt_local.shiftwidth = 2
+      vim.opt_local.softtabstop = 2
+    end,
+  })
+
+  -- Disable LSP diagnostics for markdown files
+  vim.api.nvim_create_autocmd('FileType', {
+    pattern = 'markdown',
+    callback = function(args)
+      vim.diagnostic.enable(false, { bufnr = args.buf })
+    end,
+  })
+
   -- if performing an operation that would fail due to unsaved changes in the buffer (like `:q`),
   -- instead raise a dialog asking if you wish to save the current file(s)
   -- See `:help 'confirm'`
@@ -204,6 +229,16 @@ do
   }
 
   vim.keymap.set('n', '<leader>q', vim.diagnostic.setloclist, { desc = 'Open diagnostic [Q]uickfix list' })
+
+  vim.keymap.set('n', '<leader>wq', '<cmd>close<cr>', { desc = 'Close window' })
+  vim.keymap.set('n', '<leader>t', '<cmd>term<cr>', { desc = 'Terminal: fullscreen' })
+  vim.keymap.set('n', '<leader>tv', '<cmd>vsp | term<cr>', { desc = 'Terminal: vertical split' })
+  vim.keymap.set('n', '<leader>th', '<cmd>sp | term<cr>', { desc = 'Terminal: horizontal split' })
+  vim.keymap.set('n', '<leader>bd', '<cmd>bdelete<cr>', { desc = 'Close buffer' })
+  vim.keymap.set('n', 'gr', '<cmd>Telescope lsp_references<cr>', { desc = 'Go to references' })
+  vim.keymap.set('n', 'gd', '<cmd>Telescope lsp_definitions<cr>', { desc = 'Go to definition' })
+  vim.keymap.set('n', 'gi', '<cmd>Telescope lsp_implementations<cr>', { desc = 'Go to implementation' })
+  vim.keymap.set({ 'n', 'x' }, 'ga', vim.lsp.buf.code_action, { desc = 'Code action' })
 
   -- Exit terminal mode in the builtin terminal with a shortcut that is a bit easier
   -- for people to discover. Otherwise, you normally need to press <C-\><C-n>, which
@@ -301,6 +336,14 @@ do
 
       if name == 'LuaSnip' then
         if vim.fn.has 'win32' ~= 1 and vim.fn.executable 'make' == 1 then run_build(name, { 'make', 'install_jsregexp' }, ev.data.path) end
+        return
+      end
+
+      if name == 'avante.nvim' then
+        local cmd = vim.fn.has 'win32' ~= 0
+          and { 'powershell', '-ExecutionPolicy', 'Bypass', '-File', 'Build.ps1', '-BuildFromSource', 'false' }
+          or { 'make' }
+        run_build(name, cmd, ev.data.path)
         return
       end
 
@@ -699,6 +742,25 @@ do
 
     stylua = {}, -- Used to format Lua code
 
+    pyright = {
+      before_init = function(_, config)
+        local venv_path = vim.fn.getcwd() .. '/venv/bin/python'
+        if vim.fn.executable(venv_path) == 1 then
+          config.settings.python.pythonPath = venv_path
+          return
+        end
+        local dot_venv_path = vim.fn.getcwd() .. '/.venv/bin/python'
+        if vim.fn.executable(dot_venv_path) == 1 then
+          config.settings.python.pythonPath = dot_venv_path
+          return
+        end
+        config.settings.python.pythonPath = '/opt/homebrew/bin/python3.12'
+      end,
+      settings = {
+        python = { pythonPath = '/opt/homebrew/bin/python3.12' },
+      },
+    },
+
     -- Special Lua Config, as recommended by neovim help docs
     lua_ls = {
       on_init = function(client)
@@ -970,7 +1032,7 @@ do
   -- NOTE: You can add your own plugins, configuration, etc from `lua/custom/plugins/*.lua`
   --
   --  Uncomment the following line and add your plugins to `lua/custom/plugins/*.lua` to get going.
-  -- require 'custom.plugins'
+  require 'custom.plugins'
 end
 
 -- The line beneath this is called `modeline`. See `:help modeline`
