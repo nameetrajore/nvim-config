@@ -234,7 +234,26 @@ do
   vim.keymap.set('n', '<leader>t', '<cmd>term<cr>', { desc = 'Terminal: fullscreen' })
   vim.keymap.set('n', '<leader>tv', '<cmd>vsp | term<cr>', { desc = 'Terminal: vertical split' })
   vim.keymap.set('n', '<leader>th', '<cmd>sp | term<cr>', { desc = 'Terminal: horizontal split' })
+  vim.keymap.set('n', '<leader>bb', '<C-^>', { desc = 'Switch to previous (alternate) buffer' })
   vim.keymap.set('n', '<leader>bd', '<cmd>bdelete<cr>', { desc = 'Close buffer' })
+  vim.keymap.set('n', '<leader>bD', '<cmd>%bdelete<cr>', { desc = 'Close all buffers' })
+
+  -- Copy current file path to the system clipboard
+  vim.keymap.set('n', '<leader>yp', function()
+    local path = vim.fn.fnamemodify(vim.fn.expand '%', ':~:.')
+    vim.fn.setreg('+', path)
+    vim.notify('Copied: ' .. path)
+  end, { desc = '[Y]ank relative file [P]ath' })
+  vim.keymap.set('n', '<leader>yP', function()
+    local path = vim.fn.expand '%:p'
+    vim.fn.setreg('+', path)
+    vim.notify('Copied: ' .. path)
+  end, { desc = '[Y]ank absolute file [P]ath' })
+  vim.keymap.set('n', '<leader>yn', function()
+    local name = vim.fn.expand '%:t'
+    vim.fn.setreg('+', name)
+    vim.notify('Copied: ' .. name)
+  end, { desc = '[Y]ank file [N]ame' })
   vim.keymap.set('n', 'gr', '<cmd>Telescope lsp_references<cr>', { desc = 'Go to references' })
   vim.keymap.set('n', 'gd', '<cmd>Telescope lsp_definitions<cr>', { desc = 'Go to definition' })
   vim.keymap.set('n', 'gi', '<cmd>Telescope lsp_implementations<cr>', { desc = 'Go to implementation' })
@@ -403,6 +422,57 @@ do
       topdelete = { text = '‾' }, ---@diagnostic disable-line: missing-fields
       changedelete = { text = '~' }, ---@diagnostic disable-line: missing-fields
     },
+    -- Line-level blame: virtual text at end of the current line showing who
+    -- last touched it and when. Toggle with <leader>gt.
+    current_line_blame = false,
+    current_line_blame_opts = { virt_text_pos = 'eol', delay = 300 },
+    current_line_blame_formatter = '  <author>, <author_time:%R> — <summary>',
+    on_attach = function(bufnr)
+      local gs = require 'gitsigns'
+      local tb = require 'telescope.builtin'
+      local function map(mode, l, r, desc) vim.keymap.set(mode, l, r, { buffer = bufnr, desc = desc }) end
+
+      -- Navigate hunks (honour :diff mode when in a diff split).
+      map('n', ']c', function()
+        if vim.wo.diff then vim.cmd.normal { ']c', bang = true } else gs.nav_hunk 'next' end
+      end, 'Next git [c]hange')
+      map('n', '[c', function()
+        if vim.wo.diff then vim.cmd.normal { '[c', bang = true } else gs.nav_hunk 'prev' end
+      end, 'Prev git [c]hange')
+
+      -- HISTORY (floating Telescope picker: navigable commit list + diff
+      -- preview you scroll through). This is the "see the complete history"
+      -- browser — <CR> checks the file out to that commit, so read, don't rush.
+      map('n', '<leader>gh', tb.git_bcommits, 'git [h]istory of this file')
+      map('n', '<leader>gl', tb.git_bcommits_range, 'git history of current [l]ine')
+      map('v', '<leader>gl', tb.git_bcommits_range, 'git history of selected [l]ines')
+      map('n', '<leader>gc', tb.git_commits, 'git [c]ommits (whole repo)')
+
+      -- LINE-LEVEL detail & blame.
+      map('n', '<leader>gb', function() gs.blame_line { full = true } end, 'git [b]lame line (popup)')
+      map('n', '<leader>gt', gs.toggle_current_line_blame, 'git [t]oggle inline blame')
+      map('n', '<leader>gp', gs.preview_hunk, 'git [p]review hunk')
+      map('n', '<leader>gi', gs.preview_hunk_inline, 'git preview hunk [i]nline')
+      map('n', '<leader>gw', gs.toggle_word_diff, 'git toggle [w]ord diff')
+
+      -- FILE-LEVEL detail: full-file blame window, and diffs.
+      map('n', '<leader>gB', function() gs.blame() end, 'git [B]lame whole file')
+      map('n', '<leader>gd', gs.diffthis, 'git [d]iff file vs index')
+      map('n', '<leader>gD', function() gs.diffthis '@' end, 'git [D]iff file vs last commit')
+      map('n', '<leader>gq', gs.setqflist, 'git changes in file → [q]uickfix')
+      map('n', '<leader>gQ', function() gs.setqflist 'all' end, 'git changes in repo → [Q]uickfix')
+
+      -- Stage / reset (hunk in normal & visual; whole buffer with capitals).
+      map('n', '<leader>gs', gs.stage_hunk, 'git [s]tage hunk')
+      map('n', '<leader>gr', gs.reset_hunk, 'git [r]eset hunk')
+      map('v', '<leader>gs', function() gs.stage_hunk { vim.fn.line '.', vim.fn.line 'v' } end, 'git [s]tage hunk')
+      map('v', '<leader>gr', function() gs.reset_hunk { vim.fn.line '.', vim.fn.line 'v' } end, 'git [r]eset hunk')
+      map('n', '<leader>gS', gs.stage_buffer, 'git [S]tage buffer')
+      map('n', '<leader>gR', gs.reset_buffer, 'git [R]eset buffer')
+
+      -- Hunk text object: e.g. `vih`, `dih`.
+      map({ 'o', 'x' }, 'ih', gs.select_hunk, 'select git hunk')
+    end,
   }
 
   -- Useful plugin to show you pending keybinds.
@@ -415,7 +485,7 @@ do
     spec = {
       { '<leader>s', group = '[S]earch', mode = { 'n', 'v' } },
       { '<leader>t', group = '[T]oggle' },
-      { '<leader>h', group = 'Git [H]unk', mode = { 'n', 'v' } }, -- Enable gitsigns recommended keymaps first
+      { '<leader>g', group = '[G]it', mode = { 'n', 'v' } },
       { 'gr', group = 'LSP Actions', mode = { 'n' } },
     },
   }
@@ -536,7 +606,15 @@ do
     --     i = { ['<c-enter>'] = 'to_fuzzy_refine' },
     --   },
     -- },
-    -- pickers = {}
+    pickers = {
+      -- In the buffers picker (<leader><leader>), press `dd` in normal mode to
+      -- close the highlighted buffer (insert-mode <C-d> already does this by default).
+      buffers = {
+        mappings = {
+          n = { ['dd'] = require('telescope.actions').delete_buffer },
+        },
+      },
+    },
     extensions = {
       ['ui-select'] = { require('telescope.themes').get_dropdown() },
     },
@@ -729,7 +807,7 @@ do
   --  See `:help lsp-config` for information about keys and how to configure
   ---@type table<string, vim.lsp.Config>
   local servers = {
-    -- clangd = {},
+    clangd = {},
     -- gopls = {},
     -- pyright = {},
     -- rust_analyzer = {},
@@ -738,7 +816,7 @@ do
     --    https://github.com/pmizio/typescript-tools.nvim
     --
     -- But for many setups, the LSP (`ts_ls`) will work just fine
-    -- ts_ls = {},
+    ts_ls = {}, -- JavaScript / JSX / TypeScript / TSX
 
     stylua = {}, -- Used to format Lua code
 
