@@ -29,7 +29,7 @@ This config has migrated off lazy.nvim to **`vim.pack`**, Neovim's built-in pack
 8. TREESITTER
 9. OPTIONAL EXAMPLES — ends by calling `require 'custom.plugins'`
 
-**`lua/custom/plugins/*.lua`** — personal additions, kept out of `init.lua` to avoid merge conflicts when pulling kickstart upstream. Current files: oil, flash, harpoon, lazygit, notify, undotree, vim-tmux-navigator, obsidian, render-markdown, live-preview.
+**`lua/custom/plugins/*.lua`** — personal additions, kept out of `init.lua` to avoid merge conflicts when pulling kickstart upstream. Current files: oil, flash, harpoon, notify, undotree, vim-tmux-navigator, obsidian, render-markdown, live-preview, snacks-image, table-wrap, native-open, workspaces.
 
 ## How custom plugins load
 

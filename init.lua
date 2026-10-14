@@ -231,9 +231,6 @@ do
   vim.keymap.set('n', '<leader>q', vim.diagnostic.setloclist, { desc = 'Open diagnostic [Q]uickfix list' })
 
   vim.keymap.set('n', '<leader>wq', '<cmd>close<cr>', { desc = 'Close window' })
-  vim.keymap.set('n', '<leader>t', '<cmd>term<cr>', { desc = 'Terminal: fullscreen' })
-  vim.keymap.set('n', '<leader>tv', '<cmd>vsp | term<cr>', { desc = 'Terminal: vertical split' })
-  vim.keymap.set('n', '<leader>th', '<cmd>sp | term<cr>', { desc = 'Terminal: horizontal split' })
   vim.keymap.set('n', '<leader>bb', '<C-^>', { desc = 'Switch to previous (alternate) buffer' })
   vim.keymap.set('n', '<leader>bd', '<cmd>bdelete<cr>', { desc = 'Close buffer' })
   vim.keymap.set('n', '<leader>bD', '<cmd>%bdelete<cr>', { desc = 'Close all buffers' })
@@ -258,14 +255,6 @@ do
   vim.keymap.set('n', 'gd', '<cmd>Telescope lsp_definitions<cr>', { desc = 'Go to definition' })
   vim.keymap.set('n', 'gi', '<cmd>Telescope lsp_implementations<cr>', { desc = 'Go to implementation' })
   vim.keymap.set({ 'n', 'x' }, 'ga', vim.lsp.buf.code_action, { desc = 'Code action' })
-
-  -- Exit terminal mode in the builtin terminal with a shortcut that is a bit easier
-  -- for people to discover. Otherwise, you normally need to press <C-\><C-n>, which
-  -- is not what someone will guess without a bit more experience.
-  --
-  -- NOTE: This won't work in all terminal emulators/tmux/etc. Try your own mapping
-  -- or just use <C-\><C-n> to exit terminal mode
-  vim.keymap.set('t', '<Esc><Esc>', '<C-\\><C-n>', { desc = 'Exit terminal mode' })
 
   -- TIP: Disable arrow keys in normal mode
   -- vim.keymap.set('n', '<left>', '<cmd>echo "Use h to move!!"<CR>')

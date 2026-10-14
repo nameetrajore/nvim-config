@@ -1,11 +1,11 @@
 -- Wrapping table renderer for markdown. render-markdown draws tables in place, so
 -- a table wider than the window soft-wraps and its borders fall apart. Instead,
--- hide the raw table lines (`conceal_lines`, nvim >= 0.11) and draw the table as
--- virtual lines sized to the window, word-wrapping long cells inside their column.
+-- draw the table sized to the window (long cells word-wrapped inside their
+-- column) and paint each row over its raw line's wrapped screen rows.
 --
--- Raw source comes back in insert/visual mode (render-markdown resets
--- conceallevel there, and we clear our drawing). render-markdown's own table
--- rendering is disabled in render-markdown.lua so the two don't overlap.
+-- Raw source comes back in insert/visual mode (we clear our drawing there).
+-- render-markdown's own table rendering is disabled in render-markdown.lua so
+-- the two don't overlap.
 
 local ns = vim.api.nvim_create_namespace 'table_wrap'
 local query = vim.treesitter.query.parse('markdown', '(pipe_table) @table')
@@ -50,7 +50,11 @@ local function clean(text)
   return text
 end
 
-local width = vim.fn.strdisplaywidth
+-- Display width; plain ASCII (the common case) skips the Vimscript call.
+local function width(s)
+  if not s:find '[\128-\255\t]' then return #s end
+  return vim.fn.strdisplaywidth(s)
+end
 
 -- Greedy word wrap to `w` display columns; <br> forces a break, over-long words
 -- are split by character.
@@ -64,12 +68,17 @@ local function wrap(text, w)
           table.insert(out, line)
           line = ''
         end
-        local n = 0
-        while width(vim.fn.strcharpart(word, 0, n + 1)) <= w do
-          n = n + 1
+        if not word:find '[\128-\255\t]' then
+          table.insert(out, word:sub(1, w))
+          word = word:sub(w + 1)
+        else
+          local n = 0
+          while width(vim.fn.strcharpart(word, 0, n + 1)) <= w do
+            n = n + 1
+          end
+          table.insert(out, vim.fn.strcharpart(word, 0, n))
+          word = vim.fn.strcharpart(word, n)
         end
-        table.insert(out, vim.fn.strcharpart(word, 0, n))
-        word = vim.fn.strcharpart(word, n)
       end
       if line == '' then
         line = word
@@ -188,66 +197,199 @@ local function build(lines, avail)
     wrapped[r] = { cols = cols, height = height }
   end
 
-  local out = { border_line(indent, widths, '┌', '┬', '┐', hl.head_border) }
+  -- One spec per source line: `content` is the drawn row, `tail` the border
+  -- that closes it, `above` (header only) the top border, `blank` an empty row
+  -- used to pad when the raw line wraps onto more screen rows than are drawn.
+  local function row_line(cols, line, is_head)
+    local bhl = is_head and hl.head_border or hl.border
+    local chunks = { { indent .. '│', bhl } }
+    for i = 1, ncols do
+      local text = pad(cols and cols[i][line] or '', widths[i], aligns[i])
+      table.insert(chunks, { ' ' .. text .. ' ', is_head and hl.head or nil })
+      table.insert(chunks, { '│', bhl })
+    end
+    return chunks
+  end
+  local blank = row_line(nil, 1, false)
+
+  local specs = {}
   for r, row in ipairs(wrapped) do
     local is_head = r == 1
-    local bhl = is_head and hl.head_border or hl.border
+    local spec = { content = {}, tail = {}, blank = is_head and row_line(nil, 1, true) or blank }
     for line = 1, row.height do
-      local chunks = { { indent .. '│', bhl } }
-      for i = 1, ncols do
-        local text = pad(row.cols[i][line] or '', widths[i], aligns[i])
-        table.insert(chunks, { ' ' .. text .. ' ', is_head and hl.head or nil })
-        table.insert(chunks, { '│', bhl })
-      end
-      table.insert(out, chunks)
+      table.insert(spec.content, row_line(row.cols, line, is_head))
     end
     if is_head then
-      table.insert(out, border_line(indent, widths, '├', '┼', '┤', hl.head_border))
-    elseif r < #wrapped and multi then
+      spec.above = { border_line(indent, widths, '┌', '┬', '┐', hl.head_border) }
+    elseif r == #wrapped then
+      spec.tail = { border_line(indent, widths, '└', '┴', '┘', hl.border) }
+    elseif multi then
       -- Separate rows only when some wrap; otherwise it's just noise.
-      table.insert(out, border_line(indent, widths, '├', '┼', '┤', hl.border))
+      spec.tail = { border_line(indent, widths, '├', '┼', '┤', hl.border) }
+    end
+    table.insert(specs, spec)
+    if is_head then
+      -- Source line 2 is the delimiter row; it becomes the header separator.
+      local sep = border_line(indent, widths, '├', '┼', '┤', hl.head_border)
+      local tail = #wrapped == 1 and { border_line(indent, widths, '└', '┴', '┘', hl.border) } or {}
+      table.insert(specs, { content = { sep }, tail = tail, blank = sep })
     end
   end
-  table.insert(out, border_line(indent, widths, '└', '┴', '┘', hl.border))
-  return out
+  return specs
 end
 
+-- Byte columns where each screen row of a wrapped line starts. Plain ASCII is
+-- computed directly; anything else (multibyte, tabs, other plugins' inline
+-- virtual text such as render-markdown's link icons) asks Neovim's own layout,
+-- binary-searching each row boundary.
+local function row_starts(win, row, line, first, rest, exact)
+  rest = math.max(rest, 1)
+  if not exact and not line:find '[\128-\255\t]' then
+    local starts, col = { 0 }, first
+    while col < #line do
+      table.insert(starts, col)
+      col = col + rest
+    end
+    return starts
+  end
+  local function height(opts)
+    local h = vim.api.nvim_win_text_height(win, vim.tbl_extend('force', { start_row = row, end_row = row }, opts or {}))
+    return h.all - h.fill
+  end
+  -- 0-based screen row holding the character at byte `col`.
+  local function row_of(col)
+    local vstart = vim.fn.virtcol({ row + 1, col + 1 }, true, win)[1]
+    return height { end_vcol = vstart } - 1
+  end
+  local pos = vim.str_utf_pos(line)
+  local starts, lo = { 0 }, 1
+  for j = 1, height() - 1 do
+    local hi = #pos
+    while lo < hi do
+      local mid = math.floor((lo + hi) / 2)
+      if row_of(pos[mid] - 1) >= j then
+        hi = mid
+      else
+        lo = mid + 1
+      end
+    end
+    table.insert(starts, pos[lo] - 1)
+  end
+  return starts
+end
+
+-- Per-buffer state: the inputs of the last render (to skip redundant ones) and
+-- caches of drawn tables / wrap points keyed by their inputs. Each render keeps
+-- only the entries it used, so stale ones drop out.
+local state = {}
+
 local function render(buf)
-  if not vim.api.nvim_buf_is_valid(buf) then return end
-  vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
+  if not vim.api.nvim_buf_is_valid(buf) then
+    state[buf] = nil
+    return
+  end
+  local st = state[buf] or { builds = {}, starts = {} }
+  state[buf] = st
 
   local win = vim.fn.win_findbuf(buf)[1]
-  if not win then return end
-  -- Raw source while editing or selecting.
   local mode = vim.api.nvim_get_mode().mode:sub(1, 1)
-  if vim.api.nvim_get_current_buf() == buf and not (mode == 'n' or mode == 'c') then return end
+  -- Raw source while editing or selecting.
+  local active = win and not (vim.api.nvim_get_current_buf() == buf and not (mode == 'n' or mode == 'c'))
+  if not active then
+    if st.sig then
+      vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
+      st.sig = nil
+    end
+    return
+  end
+
+  local info = vim.fn.getwininfo(win)[1]
+  local avail = info.width - info.textoff
+  local wrap_on = vim.wo[win].wrap
+  local showbreak = width(vim.wo[win].showbreak ~= '' and vim.wo[win].showbreak or vim.o.showbreak)
+  local breakindent = vim.wo[win].breakindent
+
+  -- Other plugins' inline virtual text (render-markdown's link icons) moves wrap
+  -- points, so it is part of the input. One query for the whole buffer.
+  local foreign, foreign_sig = {}, {}
+  for _, m in ipairs(vim.api.nvim_buf_get_extmarks(buf, -1, 0, -1, { details = true, type = 'virt_text' })) do
+    local d = m[4]
+    if d.ns_id ~= ns and d.virt_text_pos == 'inline' then
+      local w = 0
+      for _, chunk in ipairs(d.virt_text) do
+        w = w + width(chunk[1])
+      end
+      foreign[m[2]] = (foreign[m[2]] or '') .. m[3] .. ':' .. w .. ','
+      table.insert(foreign_sig, m[2] .. '/' .. m[3] .. ':' .. w)
+    end
+  end
+
+  -- Only rows near the window are drawn: the visible range plus one window
+  -- height either side, extended as the view scrolls past it.
+  local top, bot = info.topline - 1, info.botline - 1
+  local sig = table.concat({ vim.b[buf].changedtick, avail, tostring(wrap_on), showbreak, tostring(breakindent), table.concat(foreign_sig, ',') }, '|')
+  if sig == st.sig and top >= st.r0 and bot <= st.r1 then return end
+  local margin = info.height
+  st.sig, st.r0, st.r1 = sig, math.max(0, top - margin), bot + margin
 
   local ok, parser = pcall(vim.treesitter.get_parser, buf, 'markdown')
   if not ok or not parser then return end
-  local info = vim.fn.getwininfo(win)[1]
-  local avail = info.width - info.textoff
-  local last_line = vim.api.nvim_buf_line_count(buf) - 1
+  vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
+  local builds, starts_cache = {}, {}
+  local function mark(row, col, opts) vim.api.nvim_buf_set_extmark(buf, ns, row, col, opts) end
 
-  for _, node in query:iter_captures(parser:parse()[1]:root(), buf, 0, -1) do
+  for _, node in query:iter_captures(parser:parse()[1]:root(), buf, st.r0, st.r1 + 1) do
     local srow, _, erow, ecol = node:range()
     if ecol == 0 then erow = erow - 1 end
     local lines = vim.api.nvim_buf_get_lines(buf, srow, erow + 1, false)
-    local virt = build(lines, avail)
-    -- Virtual lines on a concealed line are hidden too, so anchor them on a
-    -- visible neighbour: above the next line, else below the previous one.
-    local anchor, above
-    if erow < last_line then
-      anchor, above = erow + 1, true
-    elseif srow > 0 then
-      anchor, above = srow - 1, false
-    end
-    if virt and anchor then
-      for row = srow, erow do
-        vim.api.nvim_buf_set_extmark(buf, ns, row, 0, { conceal_lines = '' })
+    local bkey = avail .. '\0' .. table.concat(lines, '\n')
+    local specs = st.builds[bkey]
+    if specs == nil then specs = build(lines, avail - 1) or false end
+    builds[bkey] = specs
+    for k, spec in ipairs(specs or {}) do
+      if srow + k - 1 < st.r0 or srow + k - 1 > st.r1 then goto continue end
+      -- Every raw line stays a real line and its drawing is painted over it, one
+      -- overlay per screen row the raw text wraps onto. No concealing: wrapped
+      -- height counts concealed text anyway, and keeping real lines means each
+      -- row scrolls (and takes the cursor) on its own. Rows drawn taller than
+      -- the raw text spill into virtual lines below; shorter ones pad with blanks.
+      local row, line = srow + k - 1, lines[k]
+      local indent = line:match '^%s*'
+      local bri = breakindent and width(indent) or 0
+      local starts = { 0 }
+      if wrap_on then
+        local rest = avail - bri - showbreak
+        local skey = table.concat({ avail, rest, foreign[row] or '', line }, '\0')
+        starts = st.starts[skey] or row_starts(win, row, line, avail, rest, foreign[row] ~= nil)
+        starts_cache[skey] = starts
       end
-      vim.api.nvim_buf_set_extmark(buf, ns, anchor, 0, { virt_lines = virt, virt_lines_above = above })
+
+      local seq = vim.list_extend({}, spec.content)
+      while #seq + #spec.tail < #starts do
+        table.insert(seq, spec.blank)
+      end
+      vim.list_extend(seq, spec.tail)
+
+      local pad_chunk = { string.rep(' ', avail) }
+      for j, col in ipairs(starts) do
+        local chunks = seq[j]
+        -- breakindent already indents continuation rows.
+        if j > 1 and bri > 0 then
+          chunks = vim.deepcopy(chunks)
+          chunks[1][1] = chunks[1][1]:sub(#indent + 1)
+        end
+        -- Pad to full width so the overlay covers every raw character.
+        chunks = { unpack(chunks) }
+        table.insert(chunks, pad_chunk)
+        mark(row, col, { virt_text = chunks, virt_text_pos = 'overlay' })
+      end
+      local spill = { unpack(seq, #starts + 1) }
+      if #spill > 0 then mark(row, 0, { virt_lines = spill }) end
+      if spec.above then mark(row, 0, { virt_lines = spec.above, virt_lines_above = true }) end
+      ::continue::
     end
   end
+  st.builds, st.starts = builds, starts_cache
 end
 
 local pending = {}
@@ -266,13 +408,20 @@ vim.api.nvim_create_autocmd('FileType', {
   pattern = 'markdown',
   callback = function(ev)
     local buf = ev.buf
-    vim.api.nvim_create_autocmd({ 'BufWinEnter', 'TextChanged', 'InsertLeave', 'ModeChanged', 'WinResized', 'VimResized' }, {
+    vim.api.nvim_create_autocmd({ 'BufWinEnter', 'TextChanged', 'InsertLeave', 'ModeChanged', 'WinScrolled', 'WinResized', 'VimResized' }, {
       group = group,
       buffer = buf,
       callback = function() schedule(buf) end,
     })
     schedule(buf)
   end,
+})
+-- render-markdown adds inline virtual text (link icons) that moves wrap points,
+-- so redraw after each of its renders (fired from its `on.render` hook).
+vim.api.nvim_create_autocmd('User', {
+  group = group,
+  pattern = 'RenderMarkdownRendered',
+  callback = function(ev) schedule(ev.data.buf) end,
 })
 -- WinResized fires for the resized windows' buffers, not necessarily the
 -- current one, so also catch it globally.
@@ -284,4 +433,8 @@ vim.api.nvim_create_autocmd({ 'WinResized', 'VimResized' }, {
       if vim.bo[buf].filetype == 'markdown' then schedule(buf) end
     end
   end,
+})
+vim.api.nvim_create_autocmd('BufWipeout', {
+  group = group,
+  callback = function(ev) state[ev.buf] = nil end,
 })

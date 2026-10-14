@@ -15,8 +15,12 @@ require('render-markdown').setup {
   -- Keep the cursor line rendered in normal mode; raw source only shows in
   -- insert/visual (render_modes above excludes them).
   anti_conceal = { enabled = false },
-  -- Tables are drawn by table-wrap.lua (wraps cells to fit the window).
+  -- Tables are drawn by table-wrap.lua (wraps cells to fit the window); it
+  -- redraws after each render here since link icons shift its wrap points.
   pipe_table = { enabled = false },
+  on = {
+    render = function(ctx) vim.api.nvim_exec_autocmds('User', { pattern = 'RenderMarkdownRendered', data = ctx }) end,
+  },
   -- Keep concealed text hidden on the cursor line in normal/command mode too,
   -- so moving the cursor never flips a line back to raw source.
   win_options = { concealcursor = { rendered = 'nc' } },

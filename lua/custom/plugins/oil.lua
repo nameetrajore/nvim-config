@@ -234,16 +234,6 @@ require('oil-git-status').setup {
 
 vim.keymap.set('n', '-', '<cmd>Oil<cr>', { desc = 'Oil: open parent directory' })
 
--- Don't let the global `-` map hijack terminal buffers. After <Esc><Esc> drops
--- you into normal mode in a :term, `-` would otherwise open oil. Keep terminals
--- as terminals only.
-vim.api.nvim_create_autocmd('TermOpen', {
-  group = vim.api.nvim_create_augroup('oil-no-term-hijack', { clear = true }),
-  callback = function(args)
-    vim.keymap.set('n', '-', '-', { buffer = args.buf, desc = 'disable oil in terminal' })
-  end,
-})
-
 -- Inside an oil buffer, scope find_files / live_grep to the directory currently
 -- shown in oil (via the per-call `cwd` arg — this does NOT change Vim's real cwd).
 -- Same keys as the global pickers; buffer-local override only applies in oil.
