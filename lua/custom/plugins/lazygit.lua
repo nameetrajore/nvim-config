@@ -2,7 +2,10 @@ vim.pack.add {
   'https://github.com/akinsho/toggleterm.nvim',
 }
 
-require('toggleterm').setup()
+require('toggleterm').setup {
+  direction = 'horizontal',
+  size = 15,
+}
 
 local Terminal = require('toggleterm.terminal').Terminal
 
@@ -38,16 +41,25 @@ end
 
 vim.keymap.set('n', '<leader>gg', open_lazygit, { desc = 'Lazygit (repo of current file)' })
 
-local persistent = Terminal:new {
-  direction = 'horizontal',
-  size = 15,
-  on_open = function(term)
-    vim.cmd('wincmd J') -- anchor to full-width bottom regardless of focus
-    vim.cmd('resize 15')
-    vim.cmd('startinsert') -- land in terminal mode at the prompt
-  end,
-}
-vim.keymap.set({ 'n', 't' }, '<C-_>', function() persistent:toggle() end, { desc = 'Terminal: toggle' })
+-- Multiple terminals, identified by number. A count prefix picks which one:
+--   <C-->        toggle terminal #1
+--   2<C-->       toggle terminal #2 (opens it the first time), etc.
+-- Counts only work from normal mode; while inside a terminal use <leader>ts
+-- (TermSelect) to jump between the open ones.
+--
+-- Bind both notations: <C--> is what Ghostty (Kitty keyboard protocol) sends
+-- for Ctrl+-; <C-_> is the legacy 0x1F byte that older terminals collapse
+-- Ctrl+- onto. Mapping both makes the toggle work regardless of protocol.
+for _, lhs in ipairs { '<C-->', '<C-_>' } do
+  vim.keymap.set('n', lhs, function()
+    require('toggleterm').toggle(vim.v.count1)
+  end, { desc = 'Terminal: toggle (count = which)' })
+  vim.keymap.set('t', lhs, function()
+    require('toggleterm').toggle()
+  end, { desc = 'Terminal: toggle' })
+end
+
+vim.keymap.set({ 'n', 't' }, '<leader>ts', '<cmd>TermSelect<cr>', { desc = 'Terminal: select open' })
 
 -- Claude toggle disabled.
 -- local claude_width = 0.4

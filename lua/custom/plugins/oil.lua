@@ -36,7 +36,7 @@ local function format_size(bytes)
 end
 
 local cache = {} -- abs path -> bytes
-local inflight = {} -- abs path -> true
+local inflight = {} -- abs path -> true (queued or running; dedups requests)
 
 -- Debounce re-renders so a burst of finished `du` jobs only redraws once.
 local rerender_timer
@@ -51,20 +51,40 @@ local function schedule_rerender()
   end, 80)
 end
 
+-- Cap concurrent `du` subprocesses. Rendering a directory with many subdirs (e.g.
+-- .git/objects has ~234) would otherwise spawn one `vim.system` per entry at once;
+-- each spawn needs pipe fds, and macOS's default soft maxfiles is only 256, so the
+-- burst exhausts the process fd table (EMFILE) and crashes Neovim. A small worker
+-- pool keeps the spawn count bounded regardless of how large the directory is.
+local MAX_JOBS = 6
+local queue = {} -- pending abs paths
+local running = 0
+
+local function pump()
+  while running < MAX_JOBS and #queue > 0 do
+    local path = table.remove(queue, 1)
+    running = running + 1
+    -- `du -sk` reports cumulative size in 1024-byte blocks.
+    vim.system({ 'du', '-sk', path }, { text = true }, function(out)
+      running = running - 1
+      inflight[path] = nil
+      local kb = out.stdout and out.stdout:match '^(%d+)'
+      if kb then
+        cache[path] = tonumber(kb) * 1024
+        schedule_rerender()
+      end
+      vim.schedule(pump) -- drain the next queued job on the main loop
+    end)
+  end
+end
+
 local function compute_dir_size(path)
   if inflight[path] then
     return
   end
   inflight[path] = true
-  -- `du -sk` reports cumulative size in 1024-byte blocks.
-  vim.system({ 'du', '-sk', path }, { text = true }, function(out)
-    inflight[path] = nil
-    local kb = out.stdout and out.stdout:match '^(%d+)'
-    if kb then
-      cache[path] = tonumber(kb) * 1024
-      schedule_rerender()
-    end
-  end)
+  table.insert(queue, path)
+  pump()
 end
 
 columns.register('size', {
@@ -193,8 +213,12 @@ require('oil').setup {
     show_hidden = true,
   },
   keymaps = {
-    ['<C-l>'] = 'actions.select',
-    ['<C-h>'] = 'actions.parent',
+    ['l'] = 'actions.select',
+    ['h'] = 'actions.parent',
+    -- Free <C-h>/<C-l> (oil defaults them to split/refresh) so the global
+    -- vim-tmux-navigator pane maps work inside oil buffers too.
+    ['<C-h>'] = false,
+    ['<C-l>'] = false,
     ['<C-r>'] = 'actions.refresh',
     -- gz: zip entry under cursor (or visual selection); prompts for archive name.
     -- gZ: unzip the .zip under cursor into the current dir.
@@ -209,6 +233,16 @@ require('oil-git-status').setup {
 }
 
 vim.keymap.set('n', '-', '<cmd>Oil<cr>', { desc = 'Oil: open parent directory' })
+
+-- Don't let the global `-` map hijack terminal buffers. After <Esc><Esc> drops
+-- you into normal mode in a :term, `-` would otherwise open oil. Keep terminals
+-- as terminals only.
+vim.api.nvim_create_autocmd('TermOpen', {
+  group = vim.api.nvim_create_augroup('oil-no-term-hijack', { clear = true }),
+  callback = function(args)
+    vim.keymap.set('n', '-', '-', { buffer = args.buf, desc = 'disable oil in terminal' })
+  end,
+})
 
 -- Inside an oil buffer, scope find_files / live_grep to the directory currently
 -- shown in oil (via the per-call `cwd` arg — this does NOT change Vim's real cwd).
