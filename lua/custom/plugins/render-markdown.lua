@@ -9,6 +9,9 @@ require('render-markdown').setup {
   -- visually selecting so editing stays unobstructed.
   render_modes = { 'n', 'c', 't' },
   file_types = { 'markdown' },
+  -- Default border = 'hide' conceals the closing ``` line entirely, which also
+  -- hides snacks.image's inline mermaid render (attached as virt_lines there).
+  code = { border = 'thin' },
 }
 
 -- Toggle the rendered view on/off.
