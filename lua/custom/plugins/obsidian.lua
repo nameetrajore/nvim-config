@@ -57,6 +57,7 @@ if vim.fn.isdirectory(vault) == 1 then
   vim.keymap.set('n', '<leader>ob', '<cmd>Obsidian backlinks<cr>', { desc = '[O]bsidian [B]acklinks' })
   vim.keymap.set('n', '<leader>ot', '<cmd>Obsidian tags<cr>', { desc = '[O]bsidian [T]ags' })
   vim.keymap.set('n', '<leader>on', '<cmd>Obsidian new<cr>', { desc = '[O]bsidian [N]ew note' })
+  vim.keymap.set('n', '<leader>od', '<cmd>Obsidian today<cr>', { desc = "[O]bsidian to[D]ay's daily note" })
   vim.keymap.set('n', '<leader>oi', '<cmd>Obsidian template<cr>', { desc = '[O]bsidian [I]nsert template' })
   vim.keymap.set('n', '<leader>ol', '<cmd>Obsidian links<cr>', { desc = '[O]bsidian [L]inks in note' })
   vim.keymap.set('v', '<leader>ol', '<cmd>Obsidian link_new<cr>', { desc = '[O]bsidian [L]ink selection to new note' })
