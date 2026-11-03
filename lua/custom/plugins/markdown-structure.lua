@@ -15,7 +15,7 @@
 --   C-c C-u        [u              up to parent heading
 --   TAB / S-TAB    za / <S-Tab>    fold section / cycle: overview → one level → all open
 --
--- Numbered lists are renumbered after every structural change. Normal-mode
+-- Numbered lists are renumbered after every change (and on gN). Normal-mode
 -- edits repeat with `.`. Heading levels live under <leader>m because harpoon
 -- owns <leader>1-4.
 
@@ -139,8 +139,11 @@ end
 
 -- Renumber every ordered list in the buffer: consecutive items at one indent
 -- count up from 1. Non-indented text ends a list.
-local function renumber()
+-- `join` merges the edits into the previous undo step (used by the automatic
+-- renumber after each change, so one `u` undoes the change and its renumber).
+local function renumber(join)
   local c, counters = ctx(), {}
+  local joined = not join
   local function drop(from)
     for k in pairs(counters) do
       if k >= from then counters[k] = nil end
@@ -155,6 +158,7 @@ local function renumber()
           local n = (counters[it.indent] or 0) + 1
           counters[it.indent] = n
           if n ~= it.num then
+            if not joined then joined = pcall(vim.cmd, 'undojoin') or true end
             it.num = n
             set_line(i, fmt(it))
           end
@@ -436,6 +440,7 @@ local function attach(buf)
   map({ 'n', 'x', 'o' }, ']]', function() goto_heading(1) end, 'Next heading')
   map({ 'n', 'x', 'o' }, '[[', function() goto_heading(-1) end, 'Previous heading')
   map({ 'n', 'x', 'o' }, '[u', goto_parent, 'Up to parent heading')
+  map({ 'n', 'x' }, 'gN', function() renumber() end, 'Renumber lists')
   map('n', '<S-Tab>', cycle_folds, 'Cycle folds: overview / one level / all')
 end
 
@@ -451,6 +456,14 @@ api.nvim_create_autocmd('FileType', {
     vim.schedule(function()
       if api.nvim_buf_is_valid(ev.buf) then attach(ev.buf) end
     end)
+    -- Keep numbered lists correct after any edit: new items from <CR> / o,
+    -- deleted or pasted lines. Runs once per normal-mode change and on
+    -- leaving insert mode, not on every keystroke.
+    api.nvim_create_autocmd({ 'TextChanged', 'InsertLeave' }, {
+      group = api.nvim_create_augroup('markdown-structure-renumber-' .. ev.buf, { clear = true }),
+      buffer = ev.buf,
+      callback = function() renumber(true) end,
+    })
   end,
 })
 

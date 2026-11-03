@@ -14,6 +14,10 @@
 vim.g.bullets_enabled_file_types = { 'markdown', 'text', 'gitcommit' }
 vim.g.bullets_checkbox_markers = ' x' -- plain [ ] / [x], as Obsidian writes them
 vim.g.bullets_outline_levels = {} -- indenting keeps the item's own style (1. stays 1., - stays -)
+-- bullets.vim's renumbering treats a list as running until the next blank
+-- line, so it continues numbers across a heading. markdown-structure.lua
+-- renumbers markdown lists instead; it ends a list at any heading or text.
+vim.g.bullets_renumber_on_change = 0
 vim.g.bullets_set_mappings = 0 -- defaults put the checkbox on <leader>x, which clashes
 vim.g.bullets_custom_mappings = {
   { 'imap', '<cr>', '<Plug>(bullets-newline)' },
