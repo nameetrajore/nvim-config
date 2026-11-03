@@ -5,7 +5,8 @@
 --   insert  <CR>          new item (on an empty item: end the list)
 --   insert  <C-t> / <C-d> indent / outdent item
 --   normal  o             new item below
---   normal  >> / <<       indent / outdent item     (visual: > / <)
+--   (>> / << and visual > / < live in markdown-structure.lua: they also
+--    change heading levels there, and renumber lists afterwards.)
 --   normal  <leader>c     toggle checkbox  [ ] <-> [x]
 --   normal  gN            renumber list             (visual too)
 
@@ -20,10 +21,6 @@ vim.g.bullets_custom_mappings = {
   { 'nmap', 'o', '<Plug>(bullets-newline)' },
   { 'imap', '<C-t>', '<Plug>(bullets-demote)' },
   { 'imap', '<C-d>', '<Plug>(bullets-promote)' },
-  { 'nmap', '>>', '<Plug>(bullets-demote)' },
-  { 'nmap', '<<', '<Plug>(bullets-promote)' },
-  { 'vmap', '>', '<Plug>(bullets-demote)' },
-  { 'vmap', '<', '<Plug>(bullets-promote)' },
   { 'nmap', '<leader>c', '<Plug>(bullets-toggle-checkbox)' },
   { 'nmap', 'gN', '<Plug>(bullets-renumber)' },
   { 'vmap', 'gN', '<Plug>(bullets-renumber)' },
