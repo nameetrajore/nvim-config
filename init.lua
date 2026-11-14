@@ -99,7 +99,7 @@ do
   vim.g.maplocalleader = ' '
 
   -- Set to true if you have a Nerd Font installed and selected in the terminal
-  vim.g.have_nerd_font = false
+  vim.g.have_nerd_font = true
 
   -- [[ Setting options ]]
   --  See `:help vim.o`
@@ -919,7 +919,13 @@ do
       },
     },
   })
-  require('roslyn').setup {}
+  require('roslyn').setup {
+    -- boardroom files belong to ~26 solutions; prefer the project-local .slnx (fast) over the big .sln files.
+    -- `:Roslyn target` still switches manually.
+    choose_target = function(targets)
+      return vim.iter(targets):find(function(t) return t:match '%.slnx$' end)
+    end,
+  }
 end
 
 -- ============================================================
