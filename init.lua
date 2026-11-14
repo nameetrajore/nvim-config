@@ -418,7 +418,6 @@ do
     current_line_blame_formatter = '  <author>, <author_time:%R> — <summary>',
     on_attach = function(bufnr)
       local gs = require 'gitsigns'
-      local tb = require 'telescope.builtin'
       local function map(mode, l, r, desc) vim.keymap.set(mode, l, r, { buffer = bufnr, desc = desc }) end
 
       -- Navigate hunks (honour :diff mode when in a diff split).
@@ -429,13 +428,7 @@ do
         if vim.wo.diff then vim.cmd.normal { '[c', bang = true } else gs.nav_hunk 'prev' end
       end, 'Prev git [c]hange')
 
-      -- HISTORY (floating Telescope picker: navigable commit list + diff
-      -- preview you scroll through). This is the "see the complete history"
-      -- browser — <CR> checks the file out to that commit, so read, don't rush.
-      map('n', '<leader>gh', tb.git_bcommits, 'git [h]istory of this file')
-      map('n', '<leader>gl', tb.git_bcommits_range, 'git history of current [l]ine')
-      map('v', '<leader>gl', tb.git_bcommits_range, 'git history of selected [l]ines')
-      map('n', '<leader>gc', tb.git_commits, 'git [c]ommits (whole repo)')
+      -- HISTORY (<leader>gh / gc / gl / gv) lives in lua/custom/plugins/diffview.lua.
 
       -- LINE-LEVEL detail & blame.
       map('n', '<leader>gb', function() gs.blame_line { full = true } end, 'git [b]lame line (popup)')
@@ -802,6 +795,7 @@ do
   -- Enable the following language servers
   --  Feel free to add/remove any LSPs that you want here. They will automatically be installed.
   --  See `:help lsp-config` for information about keys and how to configure
+
   ---@type table<string, vim.lsp.Config>
   local servers = {
     clangd = {},
@@ -815,26 +809,28 @@ do
     -- But for many setups, the LSP (`ts_ls`) will work just fine
     ts_ls = {}, -- JavaScript / JSX / TypeScript / TSX
 
+    -- C#: roslyn.nvim (configured below the mason setup), same server as VS Code's C# extension
+
     markdown_oxide = {}, -- Markdown LSP (wiki-links, daily notes, refs — Obsidian-friendly)
 
     stylua = {}, -- Used to format Lua code
 
     pyright = {
       before_init = function(_, config)
-        local venv_path = vim.fn.getcwd() .. '/venv/bin/python'
+        local venv_path = vim.fn.getcwd() .. '/venv/Scripts/python.exe'
         if vim.fn.executable(venv_path) == 1 then
           config.settings.python.pythonPath = venv_path
           return
         end
-        local dot_venv_path = vim.fn.getcwd() .. '/.venv/bin/python'
+        local dot_venv_path = vim.fn.getcwd() .. '/.venv/Scripts/python.exe'
         if vim.fn.executable(dot_venv_path) == 1 then
           config.settings.python.pythonPath = dot_venv_path
           return
         end
-        config.settings.python.pythonPath = '/opt/homebrew/bin/python3.12'
+        config.settings.python.pythonPath = vim.fn.exepath 'python'
       end,
       settings = {
-        python = { pythonPath = '/opt/homebrew/bin/python3.12' },
+        python = { pythonPath = vim.fn.exepath 'python' },
       },
     },
 
@@ -881,7 +877,10 @@ do
   }
 
   -- Automatically install LSPs and related tools to stdpath for Neovim
-  require('mason').setup {}
+  -- Extra registry provides the `roslyn` package (Microsoft's Roslyn C# language server)
+  require('mason').setup {
+    registries = { 'github:mason-org/mason-registry', 'github:Crashdummyy/mason-registry' },
+  }
 
   -- Ensure the servers and tools above are installed
   --
@@ -893,6 +892,9 @@ do
   local ensure_installed = vim.tbl_keys(servers or {})
   vim.list_extend(ensure_installed, {
     -- You can add other tools here that you want Mason to install
+    'csharpier', -- C# formatter
+    'roslyn', -- C# language server (driven by roslyn.nvim, not lspconfig)
+    'netcoredbg', -- C# debugger (used by lua/custom/plugins/dap.lua)
   })
 
   require('mason-tool-installer').setup { ensure_installed = ensure_installed }
@@ -901,6 +903,23 @@ do
     vim.lsp.config(name, server)
     vim.lsp.enable(name)
   end
+
+  -- C# LSP. Finds the .sln/.csproj itself; `:Roslyn target` picks a solution when there are several.
+  vim.pack.add { gh 'seblyng/roslyn.nvim' }
+  vim.lsp.config('roslyn', {
+    settings = {
+      ['csharp|inlay_hints'] = {
+        csharp_enable_inlay_hints_for_implicit_object_creation = true,
+        csharp_enable_inlay_hints_for_implicit_variable_types = true,
+      },
+      ['csharp|code_lens'] = { dotnet_enable_references_code_lens = true },
+      ['csharp|background_analysis'] = {
+        dotnet_analyzer_diagnostics_scope = 'openFiles',
+        dotnet_compiler_diagnostics_scope = 'fullSolution',
+      },
+    },
+  })
+  require('roslyn').setup {}
 end
 
 -- ============================================================
@@ -929,6 +948,7 @@ do
     },
     -- You can also specify external formatters in here.
     formatters_by_ft = {
+      cs = { 'csharpier' },
       -- rust = { 'rustfmt' },
       -- Conform can also run multiple formatters sequentially
       -- python = { "isort", "black" },
@@ -1037,7 +1057,7 @@ do
   vim.pack.add { { src = gh 'nvim-treesitter/nvim-treesitter', version = 'main' } }
 
   -- Ensure basic parsers are installed
-  local parsers = { 'bash', 'c', 'diff', 'html', 'lua', 'luadoc', 'markdown', 'markdown_inline', 'query', 'vim', 'vimdoc' }
+  local parsers = { 'bash', 'c', 'c_sharp', 'diff', 'html', 'lua', 'luadoc', 'markdown', 'markdown_inline', 'query', 'vim', 'vimdoc' }
   require('nvim-treesitter').install(parsers)
 
   ---@param buf integer

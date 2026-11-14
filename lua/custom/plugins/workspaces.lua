@@ -10,8 +10,6 @@
 -- No plugin to install: telescope is already loaded in init.lua SECTION 4. This
 -- file is auto-required by lua/custom/plugins/init.lua's directory scan.
 
-local PERSONAL = vim.env.HOME
-  .. '/Library/Mobile Documents/iCloud~md~obsidian/Documents/Personal'
 
 local function is_repo(dir)
   return vim.fn.isdirectory(dir .. '/.git') == 1
@@ -23,7 +21,7 @@ end
 -- are the repos (e.g. ~/code/entomo/wiki), so scan one level down only when the
 -- top-level dir isn't itself a repo. Non-repo subdirs (dumps, notes) are skipped.
 local function workspace_dirs()
-  local dirs = { PERSONAL }
+  local dirs = {}
   for _, top in ipairs(vim.fn.glob(vim.env.HOME .. '/code/*', true, true)) do
     if vim.fn.isdirectory(top) == 1 then
       if is_repo(top) then
@@ -37,7 +35,7 @@ local function workspace_dirs()
       end
     end
   end
-  table.insert(dirs, vim.env.HOME .. '/.config/nvim')
+  table.insert(dirs, vim.fn.stdpath 'config')
   return dirs
 end
 
