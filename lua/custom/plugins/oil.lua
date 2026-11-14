@@ -57,6 +57,15 @@ end
 -- burst exhausts the process fd table (EMFILE) and crashes Neovim. A small worker
 -- pool keeps the spawn count bounded regardless of how large the directory is.
 local MAX_JOBS = 6
+
+-- Windows has no `du` on PATH; Git for Windows ships one in <git>/usr/bin. If neither
+-- exists, directory sizes stay blank instead of erroring.
+local DU = vim.fn.exepath 'du'
+if DU == '' then
+  local git = vim.fn.exepath 'git'
+  local candidate = git ~= '' and vim.fs.normalize(vim.fs.dirname(git) .. '/../usr/bin/du.exe') or ''
+  DU = vim.fn.executable(candidate) == 1 and candidate or nil
+end
 local queue = {} -- pending abs paths
 local running = 0
 
@@ -65,7 +74,7 @@ local function pump()
     local path = table.remove(queue, 1)
     running = running + 1
     -- `du -sk` reports cumulative size in 1024-byte blocks.
-    vim.system({ 'du', '-sk', path }, { text = true }, function(out)
+    vim.system({ DU, '-sk', path }, { text = true }, function(out)
       running = running - 1
       inflight[path] = nil
       local kb = out.stdout and out.stdout:match '^(%d+)'
@@ -79,7 +88,7 @@ local function pump()
 end
 
 local function compute_dir_size(path)
-  if inflight[path] then
+  if not DU or inflight[path] then
     return
   end
   inflight[path] = true
@@ -100,6 +109,9 @@ columns.register('size', {
       local bytes = cache[path]
       if bytes then
         return format_size(bytes)
+      end
+      if not DU then
+        return columns.EMPTY
       end
       compute_dir_size(path)
       return { '…', 'OilSize' }
@@ -181,7 +193,7 @@ local function zip_entries()
     if not out or out == '' then
       return
     end
-    local cmd = { 'zip', '-r', out }
+    local cmd = { 'tar', '-a', '-c', '-f', out } -- Windows bsdtar writes .zip
     vim.list_extend(cmd, names)
     run_in_dir(dir, cmd, 'Zipped ' .. #names .. ' item(s) -> ' .. out)
   end)
@@ -198,7 +210,7 @@ local function unzip_entry()
     vim.notify('Not a .zip: ' .. entry.name, vim.log.levels.WARN)
     return
   end
-  run_in_dir(dir, { 'unzip', '-o', entry.name }, 'Unzipped ' .. entry.name)
+  run_in_dir(dir, { 'tar', '-x', '-f', entry.name }, 'Unzipped ' .. entry.name)
 end
 
 require('oil').setup {

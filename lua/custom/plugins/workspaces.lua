@@ -22,7 +22,9 @@ end
 -- top-level dir isn't itself a repo. Non-repo subdirs (dumps, notes) are skipped.
 local function workspace_dirs()
   local dirs = {}
-  for _, top in ipairs(vim.fn.glob(vim.env.HOME .. '/code/*', true, true)) do
+  local tops = vim.fn.glob(vim.env.HOME .. '/code/*', true, true)
+  vim.list_extend(tops, vim.fn.glob(vim.env.HOME .. '/workspaces/*', true, true))
+  for _, top in ipairs(tops) do
     if vim.fn.isdirectory(top) == 1 then
       if is_repo(top) then
         table.insert(dirs, top)

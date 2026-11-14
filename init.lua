@@ -911,19 +911,29 @@ do
       ['csharp|inlay_hints'] = {
         csharp_enable_inlay_hints_for_implicit_object_creation = true,
         csharp_enable_inlay_hints_for_implicit_variable_types = true,
+        dotnet_enable_inlay_hints_for_parameters = true,
       },
       ['csharp|code_lens'] = { dotnet_enable_references_code_lens = true },
       ['csharp|background_analysis'] = {
         dotnet_analyzer_diagnostics_scope = 'openFiles',
-        dotnet_compiler_diagnostics_scope = 'fullSolution',
+        dotnet_compiler_diagnostics_scope = 'openFiles', -- fullSolution is too slow on boardroom
       },
     },
   })
   require('roslyn').setup {
-    -- boardroom files belong to ~26 solutions; prefer the project-local .slnx (fast) over the big .sln files.
-    -- `:Roslyn target` still switches manually.
+    -- Let the server watch files itself; Neovim's watcher is slow on large Windows trees.
+    filewatching = 'roslyn',
+    -- boardroom files belong to ~26 solutions. Reuse the running server's solution if it has the
+    -- file; else the project-local .slnx; else the smallest solution. `:Roslyn target` overrides.
     choose_target = function(targets)
-      return vim.iter(targets):find(function(t) return t:match '%.slnx$' end)
+      for _, client in ipairs(vim.lsp.get_clients { name = 'roslyn' }) do
+        local current = require('roslyn.store').get(client.id)
+        if current and vim.list_contains(targets, current) then return current end
+      end
+      local slnx = vim.iter(targets):find(function(t) return t:match '%.slnx$' end)
+      if slnx then return slnx end
+      table.sort(targets, function(a, b) return vim.fn.getfsize(a) < vim.fn.getfsize(b) end)
+      return targets[1]
     end,
   }
 end
