@@ -418,7 +418,6 @@ do
     current_line_blame_formatter = '  <author>, <author_time:%R> — <summary>',
     on_attach = function(bufnr)
       local gs = require 'gitsigns'
-      local tb = require 'telescope.builtin'
       local function map(mode, l, r, desc) vim.keymap.set(mode, l, r, { buffer = bufnr, desc = desc }) end
 
       -- Navigate hunks (honour :diff mode when in a diff split).
@@ -429,13 +428,7 @@ do
         if vim.wo.diff then vim.cmd.normal { '[c', bang = true } else gs.nav_hunk 'prev' end
       end, 'Prev git [c]hange')
 
-      -- HISTORY (floating Telescope picker: navigable commit list + diff
-      -- preview you scroll through). This is the "see the complete history"
-      -- browser — <CR> checks the file out to that commit, so read, don't rush.
-      map('n', '<leader>gh', tb.git_bcommits, 'git [h]istory of this file')
-      map('n', '<leader>gl', tb.git_bcommits_range, 'git history of current [l]ine')
-      map('v', '<leader>gl', tb.git_bcommits_range, 'git history of selected [l]ines')
-      map('n', '<leader>gc', tb.git_commits, 'git [c]ommits (whole repo)')
+      -- HISTORY (<leader>gh / gc / gl / gv) lives in lua/custom/plugins/diffview.lua.
 
       -- LINE-LEVEL detail & blame.
       map('n', '<leader>gb', function() gs.blame_line { full = true } end, 'git [b]lame line (popup)')
@@ -802,6 +795,9 @@ do
   -- Enable the following language servers
   --  Feel free to add/remove any LSPs that you want here. They will automatically be installed.
   --  See `:help lsp-config` for information about keys and how to configure
+  -- .NET tools (csharp_ls, csharpier, netcoredbg) need DOTNET_ROOT even if nvim wasn't started from a configured shell
+  vim.env.DOTNET_ROOT = vim.env.DOTNET_ROOT or '/opt/homebrew/opt/dotnet/libexec'
+
   ---@type table<string, vim.lsp.Config>
   local servers = {
     clangd = {},
@@ -814,6 +810,8 @@ do
     --
     -- But for many setups, the LSP (`ts_ls`) will work just fine
     ts_ls = {}, -- JavaScript / JSX / TypeScript / TSX
+
+    csharp_ls = {}, -- C# LSP (needs a .csproj/.sln in the project root)
 
     markdown_oxide = {}, -- Markdown LSP (wiki-links, daily notes, refs — Obsidian-friendly)
 
@@ -893,6 +891,7 @@ do
   local ensure_installed = vim.tbl_keys(servers or {})
   vim.list_extend(ensure_installed, {
     -- You can add other tools here that you want Mason to install
+    'csharpier', -- C# formatter
   })
 
   require('mason-tool-installer').setup { ensure_installed = ensure_installed }
@@ -929,6 +928,7 @@ do
     },
     -- You can also specify external formatters in here.
     formatters_by_ft = {
+      cs = { 'csharpier' },
       -- rust = { 'rustfmt' },
       -- Conform can also run multiple formatters sequentially
       -- python = { "isort", "black" },
@@ -1037,7 +1037,7 @@ do
   vim.pack.add { { src = gh 'nvim-treesitter/nvim-treesitter', version = 'main' } }
 
   -- Ensure basic parsers are installed
-  local parsers = { 'bash', 'c', 'diff', 'html', 'lua', 'luadoc', 'markdown', 'markdown_inline', 'query', 'vim', 'vimdoc' }
+  local parsers = { 'bash', 'c', 'c_sharp', 'diff', 'html', 'lua', 'luadoc', 'markdown', 'markdown_inline', 'query', 'vim', 'vimdoc' }
   require('nvim-treesitter').install(parsers)
 
   ---@param buf integer

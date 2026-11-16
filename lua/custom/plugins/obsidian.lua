@@ -1,7 +1,7 @@
 -- Obsidian vault support: follow [[wikilinks]] & #tags, fuzzy-search notes,
 -- backlinks, daily notes, and frontmatter management — all from Neovim.
--- Picker auto-detects Telescope; completion auto-detects blink.cmp (both
--- already loaded in init.lua). plenary.nvim is also pulled in by Telescope.
+-- Picker uses Telescope (loaded in init.lua); completion comes from the
+-- plugin's built-in obsidian-ls LSP server. plenary.nvim is also pulled in by Telescope.
 -- In-buffer rendering is left to render-markdown.nvim, so obsidian's own UI
 -- concealment is disabled to avoid the two fighting over the same buffer.
 vim.pack.add {
@@ -26,17 +26,42 @@ if vim.fn.isdirectory(vault) == 1 then
     ui = { enable = false },
 
     picker = { name = 'telescope.nvim' },
-    completion = { blink = true, min_chars = 2 },
+    -- Completion comes from obsidian.nvim's built-in obsidian-ls LSP server.
+    completion = { min_chars = 2 },
 
-    -- Resolve [[links]] to the note's title when it differs from the filename.
-    wiki_link_func = 'use_alias_only',
+    -- Alias-only wiki links: [[Title]] instead of [[file-id|Title]]. Replaces the
+    -- removed `wiki_link_func = 'use_alias_only'`. Falls back to the file stem
+    -- when a note has no title. Keeps #heading / #^block anchors.
+    link = {
+      style = function(opts)
+        local stem = tostring(opts.path or ''):gsub('%.md$', '')
+        local label = opts.label and opts.label ~= '' and opts.label or stem
+        local anchor = ''
+        if opts.anchor then
+          anchor = type(opts.anchor) == 'table' and opts.anchor.anchor or opts.anchor
+        elseif opts.block then
+          anchor = type(opts.block) == 'table' and ('#' .. opts.block.id) or opts.block
+        end
+        return string.format('[[%s%s]]', label, anchor)
+      end,
+    },
+
+    -- Only the new `:Obsidian <subcommand>` form; drops :ObsidianFoo aliases.
+    legacy_commands = false,
 
     -- Vault ships its own template library.
-    templates = { folder = '_templates' },
+    templates = { folder = 'Templates' },
 
     -- New notes land in the `in/` inbox, not next to the current file.
     notes_subdir = 'in',
     new_notes_location = 'notes_subdir',
+
+    -- Readable filenames from the title (e.g. `billing-lifecycle.md`) instead of
+    -- zettel IDs like `1786002195-OYFI.md`; de-duplicates with a -2, -3 suffix.
+    note_id_func = require('obsidian.builtin').title_id,
+
+    -- `:Obsidian today` writes to journal/YYYY-MM-DD.md, matching AGENTS.md.
+    daily_notes = { folder = 'journal' },
   }
 
   -- gf follows the [[wikilink]] / [markdown](link) under the cursor when there
