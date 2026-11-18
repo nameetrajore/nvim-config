@@ -795,8 +795,11 @@ do
   -- Enable the following language servers
   --  Feel free to add/remove any LSPs that you want here. They will automatically be installed.
   --  See `:help lsp-config` for information about keys and how to configure
-  -- .NET tools (csharp_ls, csharpier, netcoredbg) need DOTNET_ROOT even if nvim wasn't started from a configured shell
-  vim.env.DOTNET_ROOT = vim.env.DOTNET_ROOT or '/opt/homebrew/opt/dotnet/libexec'
+  -- Resolve the installed SDK instead of assuming a Homebrew path (also works on Linux).
+  local dotnet = vim.fn.exepath 'dotnet'
+  if not vim.env.DOTNET_ROOT and dotnet ~= '' then
+    vim.env.DOTNET_ROOT = vim.fs.dirname(vim.uv.fs_realpath(dotnet) or dotnet)
+  end
 
   ---@type table<string, vim.lsp.Config>
   local servers = {
@@ -889,6 +892,12 @@ do
   --
   -- You can press `g?` for help in this menu.
   local ensure_installed = vim.tbl_keys(servers or {})
+  -- Mason's clangd releases do not support Linux ARM64; use the system package
+  -- there (Ubuntu: sudo apt install clangd), while keeping the LSP enabled.
+  local uname = vim.uv.os_uname()
+  if uname.sysname == 'Linux' and (uname.machine == 'aarch64' or uname.machine == 'arm64') then
+    ensure_installed = vim.tbl_filter(function(name) return name ~= 'clangd' end, ensure_installed)
+  end
   vim.list_extend(ensure_installed, {
     -- You can add other tools here that you want Mason to install
     'csharpier', -- C# formatter
